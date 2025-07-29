@@ -171,7 +171,7 @@ def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema,
                 f"log/%s/%05d.jpg"%(args.task, (idx+1)),
                 nrow=viznum,
                 normalize=True,
-                range=(-1, 1),
+                #range=(-1, 1),
             )
 
 if __name__ == "__main__":
