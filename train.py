@@ -84,9 +84,9 @@ def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema,
         y_ = y
 
         # translation
-        yhat, masks = netG(cfeat_x, y_)
+        yhat, masks = netG(cfeat_x)
         # reconstruction
-        ybar, _ = netG(cfeat_y, y_, useskip=args.use_allskip)
+        ybar, _ = netG(cfeat_y, useskip=args.use_allskip)
 
         fake_and_real = torch.cat([yhat, y], dim=0)
         preds = netD(fake_and_real)
@@ -119,7 +119,7 @@ def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema,
         optimizer_G.step()
 
         with torch.no_grad():
-            yhat, _ = netG(cfeat_x, y_)
+            yhat, _ = netG(cfeat_x)
 
         y.requires_grad_()
         fake_and_real = torch.cat([yhat.detach(), y], dim=0)
@@ -161,7 +161,7 @@ def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema,
 
         if idx == 0 or (idx+1) % args.visualize_every == 0 or (idx+1) == args.iter:
             with torch.no_grad():
-                yhat2, _ = netG_ema(cfeat_x, y_)
+                yhat2, _ = netG_ema(cfeat_x)
 
             viznum = min(args.batch, 8)
             sample = F.adaptive_avg_pool2d(torch.cat((x[0:viznum].cpu(), y[0:viznum].cpu(), 
