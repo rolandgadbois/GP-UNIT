@@ -6,7 +6,7 @@ from torchvision import models
 class SimCLR(nn.Module):
     def __init__(self, checkpoint_path):
         super().__init__()
-        self.encoder = models.resnet18(pretrained=False)
+        self.encoder = models.resnet50(pretrained=False)
         self.encoder.fc = nn.Identity()
         self.encoder.load_state_dict(torch.load(checkpoint_path, map_location='cpu'))
         self.encoder.eval()
