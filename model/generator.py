@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from model.base_network import BaseNetwork, AdaptiveInstanceNorm
+from model.base_network import BaseNetwork
 
 # The code is developed based on SPADE 
 # https://github.com/NVlabs/SPADE/blob/master/models/networks/
