@@ -16,6 +16,7 @@ from model.vgg import VGGLoss
 from model.arcface.id_loss import IDLoss
 
 from util import load_image, visualize, adv_loss, r1_reg, divide_pred, moving_average
+from dff_util import run_dff_pipeline, build_channel_mask, compute_dff_loss
 from dataset import create_unpaired_dataloader
 
 class TrainOptions():
@@ -214,7 +215,7 @@ if __name__ == "__main__":
 
     dff_masks = []
     for i, W in enumerate(concepts_per_layer):
-        C = W.shape[0]  # number of channels
+        C = W.shape[0]
         mask = build_channel_mask(W, keep_concepts[i], C=C)
         dff_masks.append(mask)  # mask is np.array of shape [C]
     
