@@ -8,7 +8,7 @@ from sklearn.decomposition import NMF
 from tqdm import tqdm
 from typing import Tuple, List
 from pytorch_grad_cam.utils.image import scale_cam_image
-
+import torch.nn.functional as F
 
 def load_and_preprocess_images(image_dir: str, size: Tuple[int, int] = (256, 256)) -> torch.Tensor:
     transform = transforms.Compose([
