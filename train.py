@@ -32,6 +32,7 @@ class TrainOptions():
         self.parser.add_argument("--lambda_content", type=float, default=1.0, help="the weight of content loss")
         self.parser.add_argument("--lambda_mask", type=float, default=1.0, help="the weight of mask loss")
         self.parser.add_argument("--lambda_id", type=float, default=1.0, help="the weight of identity loss")
+        self.parser.add_argument("--lambda_dff", type=float, default=1.0, help="weight for DFF perceptual loss")
         self.parser.add_argument("--source_paths", type=str, nargs='+', help="the path to the training images in each source domain")
         self.parser.add_argument("--target_paths", type=str, nargs='+', help="the path to the training images in each target domain")
         self.parser.add_argument("--source_num", type=int, nargs='+', default=[0], help="the number of the training images in each source domain")
@@ -57,7 +58,7 @@ class TrainOptions():
         return self.opt
 
 def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema, 
-          vgg_loss, id_loss=None, device='cuda'):
+          vgg_loss, id_loss=None, device='cuda', dff_masks = None):
     
     pbar = tqdm(range(args.iter), initial=0, smoothing=0.01, ncols=130, dynamic_ncols=False)
     
@@ -107,6 +108,9 @@ def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema,
         if args.use_idloss: 
             Lid = id_loss(yhat, y) * args.lambda_id
 
+        Ldff = compute_dff_loss(netEC, x, yhat, dff_masks, target_layers=[1, 2, 3, 4], device=device) * args.lambda_dff
+        loss_dict['dff'] = Ldff
+
         loss_dict['g'] = Lgadv
         loss_dict['con'] = Lcon    
         loss_dict['msk'] = Lmsk
@@ -114,7 +118,7 @@ def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema,
         if args.use_idloss:
             loss_dict['id'] = Lid
 
-        g_loss = Lgadv + Lcon + Lmsk + Lrec + Lid
+        g_loss = Lgadv + Lcon + Lmsk + Lrec + Lid + Ldff
 
         optimizer_G.zero_grad()
         g_loss.backward()
@@ -252,4 +256,4 @@ if __name__ == "__main__":
         id_loss = None
 
     train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema, 
-          vgg_loss, id_loss, device)
+          vgg_loss, id_loss, device, dff_masks)
