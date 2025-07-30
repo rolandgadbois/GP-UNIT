@@ -41,6 +41,7 @@ class TrainOptions():
         self.parser.add_argument("--save_begin", type=int, default=50000, help="when to start saving a checkpoint")
         self.parser.add_argument("--visualize_every", type=int, default=1000, help="interval of saving an intermediate result")
         self.parser.add_argument("--model_path", type=str, default='./checkpoint/', help="path to the saved models")  
+        self.parser.add_argument("--dff_dataset", type=str, default=None, help="path to images used for DFF concept extraction")
 
     def parse(self):
         self.opt = self.parser.parse_args()
@@ -189,6 +190,36 @@ if __name__ == "__main__":
     netEC = netEC.to(device)
     for param in netEC.parameters():
         param.requires_grad = False
+
+    print("Running DFF pipeline...")
+    target_layers = [1, 2, 3, 4]
+    
+    if args.dff_dataset is None or not os.path.exists(args.dff_dataset):
+        raise ValueError("You must provide a valid path for --dff_dataset")
+    
+    images, dff_maps, concepts_per_layer = run_dff_pipeline(
+        image_dir=args.dff_dataset,
+        content_encoder=netEC,
+        target_layers=target_layers,
+        n_components=10,
+        image_size=(256, 256)
+    )
+
+    keep_concepts = {
+        0: [3, 4, 6, 7, 8, 9],  # Layer 1
+        1: [1, 2, 6, 7, 8, 9],  # Layer 2
+        2: [1, 4, 5, 6, 7, 8, 9],     # Layer 3
+        3: [1, 2, 3, 4, 5, 6, 7, 8],     # Layer 4
+    }
+
+    dff_masks = []
+    for i, W in enumerate(concepts_per_layer):
+        C = W.shape[0]  # number of channels
+        mask = build_channel_mask(W, keep_concepts[i], C=C)
+        dff_masks.append(mask)  # mask is np.array of shape [C]
+    
+    dff_masks = [torch.tensor(m).to(device) for m in dff_masks]
+    print("DFF masks ready.")
         
     netG = Generator().to(device)
     netG_ema = Generator().to(device)
