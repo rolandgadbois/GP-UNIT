@@ -119,3 +119,20 @@ def build_channel_mask(W: np.ndarray, keep_concepts: List[int], C: int, threshol
     mask = np.zeros(C, dtype=np.float32)
     mask[list(keep_channels)] = 1.0
     return mask
+
+def compute_dff_loss(content_encoder, x, yhat, dff_masks, target_layers, device='cuda'):
+    content_encoder.eval()
+    loss = 0.0
+    with torch.no_grad():
+        fx = x
+        fy = yhat
+        for i in range(6):
+            fx = getattr(content_encoder, f'layer{i+1}')(fx)
+            fy = getattr(content_encoder, f'layer{i+1}')(fy)
+            if (i + 1) in target_layers:
+                layer_idx = target_layers.index(i + 1)
+                mask = torch.tensor(dff_masks[layer_idx], device=device).view(1, -1, 1, 1)
+                fx_masked = fx * mask
+                fy_masked = fy * mask
+                loss += F.l1_loss(fx_masked, fy_masked)
+    return loss
