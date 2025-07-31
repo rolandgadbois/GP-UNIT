@@ -131,7 +131,7 @@ def compute_dff_loss(content_encoder, x, yhat, dff_masks, target_layers, device=
             fy = getattr(content_encoder, f'layer{i+1}')(fy)
             if (i + 1) in target_layers:
                 layer_idx = target_layers.index(i + 1)
-                mask = torch.tensor(dff_masks[layer_idx], device=device).view(1, -1, 1, 1)
+                mask = dff_masks[layer_idx].clone().detach().to(device).view(1, -1, 1, 1)
                 fx_masked = fx * mask
                 fy_masked = fy * mask
                 loss += F.l1_loss(fx_masked, fy_masked)
