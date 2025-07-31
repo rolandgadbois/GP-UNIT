@@ -51,7 +51,6 @@ if __name__ == "__main__":
 
     print('Load models successfully!')
     
-    print('Perform latent-guided translation to generate %d images'%(args.batch))
     save_name = args.name+'_%s'%(os.path.basename(args.content).split('.')[0])
     
     with torch.no_grad():
