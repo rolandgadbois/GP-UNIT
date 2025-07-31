@@ -63,7 +63,7 @@ if __name__ == "__main__":
     print('Generate images successfully!')
     
     save_image(I_yhat[0].cpu(), os.path.join(args.output_path, save_name+'.jpg'))
-    save_image(torchvision.utils.make_grid(torch.cat([Ix, Iy, I_yhat.cpu()], dim=0), 3, 2), 
+    save_image(torchvision.utils.make_grid(torch.cat([Ix, I_yhat.cpu()], dim=0), 2, 1), 
             os.path.join(args.output_path, save_name+'_overview.jpg'))
 
     print('Save images successfully!')
