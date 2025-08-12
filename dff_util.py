@@ -111,11 +111,15 @@ def visualize_composite(images: torch.Tensor, dff_maps: List[List[np.ndarray]], 
 def get_channels_per_concept(W: np.ndarray, threshold: float = 0.1) -> List[List[int]]:
     return [list(np.where(W[:, i] > threshold * W[:, i].max())[0]) for i in range(W.shape[1])]
 
-def build_channel_mask(W: np.ndarray, keep_concepts: List[int], C: int, threshold: float = 0.1) -> np.ndarray:
-    concept_channels = get_channels_per_concept(W, threshold)
+def build_channel_mask(W: np.ndarray, keep_concepts: List[int], C: int) -> np.ndarray:
+    # For each channel (row), find the concept (column) with the max weight
+    channel_max_concept = np.argmax(W, axis=1)  # shape: (C,)
+
     keep_channels = set()
-    for idx in keep_concepts:
-        keep_channels.update(concept_channels[idx])
+    for ch, concept in enumerate(channel_max_concept):
+        if concept in keep_concepts:
+            keep_channels.add(ch)
+
     mask = np.zeros(C, dtype=np.float32)
     mask[list(keep_channels)] = 1.0
     return mask
