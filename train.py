@@ -87,7 +87,7 @@ def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema,
         y_ = y
 
         # translation
-        yhat, masks = netG(cfeat_x)
+        yhat, masks = netG(cfeat_x, fixed_masks=dff_masks)
         # reconstruction
         ybar, _ = netG(cfeat_y, useskip=args.use_allskip)
 
@@ -167,7 +167,7 @@ def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema,
 
         if idx == 0 or (idx+1) % args.visualize_every == 0 or (idx+1) == args.iter:
             with torch.no_grad():
-                yhat2, _ = netG_ema(cfeat_x)
+                yhat2, _ = netG_ema(cfeat_x, fixed_masks=dff_masks)
 
             viznum = min(args.batch, 8)
             sample = F.adaptive_avg_pool2d(torch.cat((x[0:viznum].cpu(), y[0:viznum].cpu(), 
