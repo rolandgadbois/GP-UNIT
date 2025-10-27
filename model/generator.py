@@ -57,19 +57,20 @@ class DynamicSkipLayer(BaseNetwork):
         # sigma
         self.sigmoid = nn.Sigmoid()
         
-    def forward(self, fdec, fenc, s, fixed_mask=None):
+    def forward(self, fdec, fenc, s):
         # h^ = sigma(Wh * up(h))
         state = F.leaky_relu(self.trans(self.up(s)), 2e-1)
         # r = sigma(Wr * [h^, fE])
         reset_gate = self.sigmoid(self.reset(torch.cat((state,fenc),dim=1)))
         # h = rh^
         new_state = reset_gate * state
+        # m = sigma(Wm * [h^, fE]) with sigma=None
+        mask = self.mask(torch.cat((state,fenc),dim=1))
+        # apply relu + tanh to set most of the elements to zeros
+        mask = (F.relu(mask)).tanh()
+        # fE^ = sigma(WE * [h, fE]) with sigma=None
         new_fenc = self.update(torch.cat((new_state,fenc),dim=1))
-        if fixed_mask is not None:
-            mask = fixed_mask  # precomputed mask (already shaped [1, C, 1, 1])
-        else:
-            mask = (F.relu(self.mask(torch.cat((state,fenc),dim=1)))).tanh()
-
+        # f = (1-m) * fG + m * fE^
         output = (1-mask) * fdec + mask * new_fenc
         return output, new_state, mask
 
@@ -82,7 +83,7 @@ class GeneratorLayer(BaseNetwork):
         self.rgblayer = nn.Conv2d(fout, 3, 7, padding=3)
         self.skiplayer = DynamicSkipLayer(content_nc, fout) if useskip else None
 
-    def forward(self, x, content=None, state=None, fixed_mask=None):
+    def forward(self, x, content=None, state=None):
         mask = None
         new_state = None
         x = self.reslayer(x)
@@ -90,7 +91,7 @@ class GeneratorLayer(BaseNetwork):
             x = self.postlayer(x)
         rgb = self.rgblayer(F.leaky_relu(x, 2e-1))
         if self.skiplayer is not None and content is not None and state is not None:
-            x, new_state, mask = self.skiplayer(x, content, state, fixed_mask=fixed_mask)
+            x, new_state, mask = self.skiplayer(x, content, state)
         return x, rgb, new_state, mask
 
 class Generator(BaseNetwork):
@@ -108,7 +109,7 @@ class Generator(BaseNetwork):
         self.model = nn.Sequential(*sequence)
         self.up = nn.Upsample(scale_factor=2)
 
-    def forward(self, content, scale=5, useskip=True, fixed_masks=None):
+    def forward(self, content, scale=5, useskip=True):
         masks = []
         state = content[0] if useskip else None
 
@@ -117,30 +118,30 @@ class Generator(BaseNetwork):
             return torch.tanh(rgb), masks
 
         x = self.up(x)
-        current_mask = fixed_masks[0] if (fixed_masks is not None and len(fixed_masks) > 0) else None
-        x, rgb, state, mask = self.model[1](x, content[2], state, fixed_mask=current_mask)
-        if mask is not None: masks.append(mask)
+        x, rgb, state, mask = self.model[1](x, content[2], state)
+        if mask is not None:
+            masks.append(mask)
         if scale == 1:
             return torch.tanh(rgb), masks
 
         x = self.up(x)
-        current_mask = fixed_masks[1] if (fixed_masks is not None and len(fixed_masks) > 1) else None
-        x, rgb, state, mask = self.model[2](x, content[3], state, fixed_mask=current_mask)
-        if mask is not None: masks.append(mask)
+        x, rgb, state, mask = self.model[2](x, content[3], state)
+        if mask is not None:
+            masks.append(mask)
         if scale == 2:
             return torch.tanh(rgb), masks
 
         x = self.up(x)
-        current_mask = fixed_masks[2] if (fixed_masks is not None and len(fixed_masks) > 2) else None
-        x, rgb, state, mask = self.model[3](x, content[4], state, fixed_mask=current_mask)
-        if mask is not None: masks.append(mask)
+        x, rgb, state, mask = self.model[3](x, content[4], state)
+        if mask is not None:
+            masks.append(mask)
         if scale == 3:
             return torch.tanh(rgb), masks
 
         x = self.up(x)
-        current_mask = fixed_masks[3] if (fixed_masks is not None and len(fixed_masks) > 3) else None
-        x, rgb, state, mask = self.model[4](x, content[5], state, fixed_mask=current_mask)
-        if mask is not None: masks.append(mask)
+        x, rgb, state, mask = self.model[4](x, content[5], state)
+        if mask is not None:
+            masks.append(mask)
         if scale == 4:
             return torch.tanh(rgb), masks
 
