@@ -81,12 +81,6 @@ def train(args, dataloader, netG, netD, optimizer_G, optimizer_D, netG_ema,
             cfeat_x = netEC(x, get_feature=True)
             cfeat_y = netEC(y, get_feature=True)
 
-        for i, mask in enumerate(dff_masks):
-            # Skip if the layer doesn't exist or size mismatch
-            if i < len(cfeat_x):
-                cfeat_x[i] = cfeat_x[i] * mask.view(1, -1, 1, 1)
-                cfeat_y[i] = cfeat_y[i] * mask.view(1, -1, 1, 1)
-
         loss_dict = {}
 
         # No flipping of style image anymore, just use y directly
