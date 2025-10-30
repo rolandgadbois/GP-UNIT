@@ -235,9 +235,6 @@ if __name__ == "__main__":
     netG_ema = Generator(dff_masks=dff_masks, alpha=0.6).to(device)
     netD = Discriminator().to(device)
 
-    netG.init_weights('kaiming', 0.02)
-    netD.init_weights('kaiming', 0.02)
-
     netG_ema = copy.deepcopy(netG)    
     for param in netG_ema.parameters():
         param.requires_grad = False    
