@@ -7,27 +7,21 @@ from model.base_network import BaseNetwork
 # https://github.com/NVlabs/SPADE/blob/master/models/networks/
 
 class ConceptSkipLayer(nn.Module):
-    def __init__(self, dff_mask: torch.Tensor):
-        """
-        dff_mask: Tensor of shape [C], where C = number of channels in the skip layer.
-                  Should contain values in [0,1] for each channel.
-        """
+    def __init__(self, fin, fout, dff_mask, alpha=1.0):
         super().__init__()
-        self.register_buffer("dff_mask", dff_mask.view(1, -1, 1, 1))  # broadcastable
-        self.alpha = 1.0  # weight for skip influence; you can tune or make it configurable
+        self.conv_enc = nn.Conv2d(fin, fout, 3, padding=1)
+        self.conv_dec = nn.Conv2d(fout, fout, 3, padding=1)
+        self.dff_mask = nn.Parameter(torch.tensor(dff_mask, dtype=torch.float32), requires_grad=False)
+        self.alpha = alpha
 
-    def forward(self, f_dec: torch.Tensor, f_enc: torch.Tensor):
-        """
-        f_dec: decoder feature map
-        f_enc: encoder feature map (skip connection)
-        """
-        # Ensure shape compatibility (e.g., by interpolation if needed)
-        if f_dec.shape[-2:] != f_enc.shape[-2:]:
-            f_enc = nn.functional.interpolate(f_enc, size=f_dec.shape[-2:], mode='bilinear', align_corners=False)
-        
-        # Fuse according to DFF mask
-        f_out = (1 - self.alpha * self.dff_mask) * f_dec + (self.alpha * self.dff_mask) * f_enc
-        return f_out
+    def forward(self, f_dec, f_enc, state=None):
+        # reshape mask to (1, C, 1, 1)
+        mask = self.dff_mask.view(1, -1, 1, 1).to(f_dec.device)
+        f_enc = self.conv_enc(f_enc)
+        f_dec = self.conv_dec(f_dec)
+        # fuse using mask
+        f_out = (1 - self.alpha * mask) * f_dec + (self.alpha * mask) * f_enc
+        return f_out, state, mask
     
 class ResnetBlock(BaseNetwork):
     def __init__(self, fin, fout):
@@ -99,7 +93,7 @@ class DynamicSkipLayer(BaseNetwork):
 
 
 class GeneratorLayer(BaseNetwork):
-    def __init__(self, fin, fout, content_nc, usepost=False, useskip=False):
+    def __init__(self, fin, fout, content_nc, usepost=False, useskip=False, dff_mask=None):
         super().__init__()
         self.reslayer = ResnetBlock(fin, fout)
         self.postlayer = ResnetBlock(fout, fout) if usepost else None
