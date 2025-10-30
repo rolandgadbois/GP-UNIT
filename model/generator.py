@@ -7,49 +7,26 @@ from model.base_network import BaseNetwork
 # https://github.com/NVlabs/SPADE/blob/master/models/networks/
 
 class ConceptSkipLayer(nn.Module):
-    """
-    Concept-driven skip connection layer that fuses encoder and decoder
-    features using precomputed semantic concept masks (from DFF decomposition).
-    Gracefully handles cases where no concept mask is provided.
-    """
-
-    def __init__(self, fin_enc, fin_dec, concept_mask=None, alpha=0.5, use_norm=True):
+    def __init__(self, dff_mask: torch.Tensor):
+        """
+        dff_mask: Tensor of shape [C], where C = number of channels in the skip layer.
+                  Should contain values in [0,1] for each channel.
+        """
         super().__init__()
-        self.alpha = alpha
-        self.use_norm = use_norm
-        self.has_mask = concept_mask is not None
+        self.register_buffer("dff_mask", dff_mask.view(1, -1, 1, 1))  # broadcastable
+        self.alpha = 1.0  # weight for skip influence; you can tune or make it configurable
 
-        # Align encoder and decoder channel dimensions
-        if fin_enc != fin_dec:
-            self.align = nn.Conv2d(fin_enc, fin_dec, kernel_size=1, padding=0)
-        else:
-            self.align = nn.Identity()
-
-        if use_norm:
-            self.norm_enc = nn.InstanceNorm2d(fin_enc, affine=False)
-            self.norm_dec = nn.InstanceNorm2d(fin_dec, affine=False)
-
-        # Only register the mask if it exists
-        if self.has_mask:
-            self.register_buffer("concept_mask", concept_mask.view(1, -1, 1, 1))
-        else:
-            self.concept_mask = None  # ensures attribute exists
-
-    def forward(self, fdec, fenc):
-        fenc = self.align(fenc)
-
-        if self.use_norm:
-            fenc = self.norm_enc(fenc)
-            fdec = self.norm_dec(fdec)
-
-        if self.has_mask:
-            # Concept-guided interpolation
-            f_out = (1 - self.alpha * self.concept_mask) * fdec + \
-                    (self.alpha * self.concept_mask) * fenc
-        else:
-            # Standard skip connection (no DFF guidance)
-            f_out = 0.5 * (fdec + fenc)
-
+    def forward(self, f_dec: torch.Tensor, f_enc: torch.Tensor):
+        """
+        f_dec: decoder feature map
+        f_enc: encoder feature map (skip connection)
+        """
+        # Ensure shape compatibility (e.g., by interpolation if needed)
+        if f_dec.shape[-2:] != f_enc.shape[-2:]:
+            f_enc = nn.functional.interpolate(f_enc, size=f_dec.shape[-2:], mode='bilinear', align_corners=False)
+        
+        # Fuse according to DFF mask
+        f_out = (1 - self.alpha * self.dff_mask) * f_dec + (self.alpha * self.dff_mask) * f_enc
         return f_out
     
 class ResnetBlock(BaseNetwork):
@@ -140,67 +117,58 @@ class GeneratorLayer(BaseNetwork):
             x, new_state, mask = self.skiplayer(x, content, state)
         return x, rgb, new_state, mask
 
-class Generator(nn.Module):
-    def __init__(self, dff_masks, alpha=0.6):
-        """
-        dff_masks: list of 6 channel-wise DFF concept masks (torch tensors)
-        alpha: interpolation strength for concept-preserving skips
-        """
+class Generator(BaseNetwork):
+    def __init__(self, content_nc=[1,1,512,256,128,64], ngf=64):
         super().__init__()
 
-        # --- Encoder (example channel sizes, adjust to match your GP-UNIT) ---
-        self.enc1 = nn.Conv2d(3, 64, 4, 2, 1)
-        self.enc2 = nn.Conv2d(64, 128, 4, 2, 1)
-        self.enc3 = nn.Conv2d(128, 256, 4, 2, 1)
-        self.enc4 = nn.Conv2d(256, 512, 4, 2, 1)
-        self.enc5 = nn.Conv2d(512, 512, 4, 2, 1)
-        self.enc6 = nn.Conv2d(512, 512, 4, 2, 1)
+        sequence = []
+        sequence.append(GeneratorLayer(1, 8*ngf, content_nc[0], usepost=True))
+        sequence.append(GeneratorLayer(8*ngf, 8*ngf, content_nc[1], useskip=True))
+        sequence.append(GeneratorLayer(8*ngf, 4*ngf, content_nc[2], useskip=True))
+        sequence.append(GeneratorLayer(4*ngf, 2*ngf, content_nc[3]))
+        sequence.append(GeneratorLayer(2*ngf, 1*ngf, content_nc[4]))
+        sequence.append(GeneratorLayer(1*ngf, 1*ngf, content_nc[5]))
 
-        # --- Decoder ---
-        self.dec6 = nn.ConvTranspose2d(512, 512, 4, 2, 1)
-        self.dec5 = nn.ConvTranspose2d(1024, 512, 4, 2, 1)
-        self.dec4 = nn.ConvTranspose2d(1024, 256, 4, 2, 1)
-        self.dec3 = nn.ConvTranspose2d(512, 128, 4, 2, 1)
-        self.dec2 = nn.ConvTranspose2d(256, 64, 4, 2, 1)
-        self.dec1 = nn.ConvTranspose2d(128, 3, 4, 2, 1)
+        self.model = nn.Sequential(*sequence)
+        self.up = nn.Upsample(scale_factor=2)
 
-        # --- Concept-aware skip layers ---
-        # Each aligns decoder and encoder channels for concept-driven fusion
-        self.skips = nn.ModuleList([
-            ConceptSkipLayer(512, 512, dff_masks[5], alpha=alpha),  # between enc6-dec6
-            ConceptSkipLayer(512, 512, dff_masks[4], alpha=alpha),
-            ConceptSkipLayer(512, 256, dff_masks[3], alpha=alpha),
-            ConceptSkipLayer(256, 128, dff_masks[2], alpha=alpha),
-            ConceptSkipLayer(128, 64,  dff_masks[1], alpha=alpha),
-            ConceptSkipLayer(64,  3,   dff_masks[0], alpha=alpha)
-        ])
+    def forward(self, content, scale=5, useskip=True):
+        masks = []
+        state = content[0] if useskip else None
 
-    def forward(self, x):
-        # --- Encoder forward ---
-        e1 = F.leaky_relu(self.enc1(x), 0.2)
-        e2 = F.leaky_relu(self.enc2(e1), 0.2)
-        e3 = F.leaky_relu(self.enc3(e2), 0.2)
-        e4 = F.leaky_relu(self.enc4(e3), 0.2)
-        e5 = F.leaky_relu(self.enc5(e4), 0.2)
-        e6 = F.leaky_relu(self.enc6(e5), 0.2)
+        x, rgb, _, _ = self.model[0](content[0])
+        if scale == 0:
+            return torch.tanh(rgb), masks
 
-        # --- Decoder with concept-preserving skips ---
-        d6 = F.relu(self.dec6(e6))
-        d6 = self.skips[0](d6, e6)
+        x = self.up(x)
+        x, rgb, state, mask = self.model[1](x, content[2], state)
+        if mask is not None:
+            masks.append(mask)
+        if scale == 1:
+            return torch.tanh(rgb), masks
 
-        d5 = F.relu(self.dec5(torch.cat([d6, e5], dim=1)))
-        d5 = self.skips[1](d5, e5)
+        x = self.up(x)
+        x, rgb, state, mask = self.model[2](x, content[3], state)
+        if mask is not None:
+            masks.append(mask)
+        if scale == 2:
+            return torch.tanh(rgb), masks
 
-        d4 = F.relu(self.dec4(torch.cat([d5, e4], dim=1)))
-        d4 = self.skips[2](d4, e4)
+        x = self.up(x)
+        x, rgb, state, mask = self.model[3](x, content[4], state)
+        if mask is not None:
+            masks.append(mask)
+        if scale == 3:
+            return torch.tanh(rgb), masks
 
-        d3 = F.relu(self.dec3(torch.cat([d4, e3], dim=1)))
-        d3 = self.skips[3](d3, e3)
+        x = self.up(x)
+        x, rgb, state, mask = self.model[4](x, content[5], state)
+        if mask is not None:
+            masks.append(mask)
+        if scale == 4:
+            return torch.tanh(rgb), masks
 
-        d2 = F.relu(self.dec2(torch.cat([d3, e2], dim=1)))
-        d2 = self.skips[4](d2, e2)
+        x = self.up(x)
+        x, rgb, _, _ = self.model[5](x)
 
-        d1 = torch.tanh(self.dec1(torch.cat([d2, e1], dim=1)))
-        d1 = self.skips[5](d1, e1)
-
-        return d1
+        return torch.tanh(rgb), masks
