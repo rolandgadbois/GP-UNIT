@@ -124,8 +124,11 @@ class GeneratorLayer(BaseNetwork):
         return x, rgb, new_state, mask
 
 class Generator(BaseNetwork):
-    def __init__(self, content_nc=[1,1,512,256,128,64], ngf=64):
+    def __init__(self, content_nc=[1,1,512,256,128,64], ngf=64, dff_masks=None):
         super().__init__()
+
+        if dff_masks is None:
+            raise ValueError("Generator requires precomputed dff_masks")
 
         sequence = []
         sequence.append(GeneratorLayer(1, 8*ngf, content_nc[0], usepost=True))
