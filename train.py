@@ -222,18 +222,16 @@ if __name__ == "__main__":
         C = W.shape[0]
         mask = build_channel_mask(W, keep_concepts[i], C=C)
         dff_masks.append(mask)  # mask is np.array of shape [C]
-
-    while len(dff_masks) < 6:
-        dff_masks.append(None)
-        
-    dff_masks = [
-    torch.tensor(m, dtype=torch.float32).to(device) if m is not None else None
-    for m in dff_masks]
+    
+    dff_masks = [torch.tensor(m).to(device) for m in dff_masks]
     print("DFF masks ready.")
         
-    netG = Generator(dff_masks=dff_masks, alpha=0.6).to(device)
-    netG_ema = Generator(dff_masks=dff_masks, alpha=0.6).to(device)
+    netG = Generator().to(device)
+    netG_ema = Generator().to(device)
     netD = Discriminator().to(device)
+
+    netG.init_weights('kaiming', 0.02)
+    netD.init_weights('kaiming', 0.02)
 
     netG_ema = copy.deepcopy(netG)    
     for param in netG_ema.parameters():
