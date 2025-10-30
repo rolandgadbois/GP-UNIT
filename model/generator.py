@@ -101,7 +101,7 @@ class GeneratorLayer(BaseNetwork):
         if useskip:
             if dff_mask is None:
                 raise ValueError("useskip=True but no dff_mask provided.")
-            self.skiplayer = ConceptSkipLayer(dff_mask)  # <- replaces DynamicSkipLayer
+            self.skiplayer = ConceptSkipLayer(fin, fout, dff_mask)  # <- replaces DynamicSkipLayer
         else:
             self.skiplayer = None
 
