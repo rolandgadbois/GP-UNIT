@@ -113,7 +113,7 @@ class GeneratorLayer(BaseNetwork):
             x = self.postlayer(x)
         rgb = self.rgblayer(F.leaky_relu(x, 2e-1))
         if self.skiplayer is not None and content is not None and state is not None:
-            x = self.skiplayer(x, state)  # <- only returns fused feature
+            x, new_state, mask = self.skiplayer(x, content, state)
             new_state = state
         return x, rgb, new_state, mask
 
