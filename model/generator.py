@@ -5,23 +5,6 @@ from model.base_network import BaseNetwork
 
 # The code is developed based on SPADE 
 # https://github.com/NVlabs/SPADE/blob/master/models/networks/
-
-class ConceptSkipLayer(nn.Module):
-    def __init__(self, fin, fout, dff_mask, alpha=1.0):
-        super().__init__()
-        self.conv_enc = nn.Conv2d(fin, fout, 3, padding=1)
-        self.conv_dec = nn.Conv2d(fout, fout, 3, padding=1)
-        self.dff_mask = nn.Parameter(torch.tensor(dff_mask, dtype=torch.float32), requires_grad=False)
-        self.alpha = alpha
-
-    def forward(self, f_dec, f_enc, state=None):
-        # reshape mask to (1, C, 1, 1)
-        mask = self.dff_mask.view(1, -1, 1, 1).to(f_dec.device)
-        f_enc = self.conv_enc(f_enc)
-        f_dec = self.conv_dec(f_dec)
-        # fuse using mask
-        f_out = (1 - self.alpha * mask) * f_dec + (self.alpha * mask) * f_enc
-        return f_out, state, mask
     
 class ResnetBlock(BaseNetwork):
     def __init__(self, fin, fout):
@@ -93,17 +76,12 @@ class DynamicSkipLayer(BaseNetwork):
 
 
 class GeneratorLayer(BaseNetwork):
-    def __init__(self, fin, fout, content_nc, usepost=False, useskip=False, dff_mask=None):
+    def __init__(self, fin, fout, content_nc, usepost=False, useskip=False):
         super().__init__()
         self.reslayer = ResnetBlock(fin, fout)
         self.postlayer = ResnetBlock(fout, fout) if usepost else None
         self.rgblayer = nn.Conv2d(fout, 3, 7, padding=3)
-        if useskip:
-            if dff_mask is None:
-                raise ValueError("useskip=True but no dff_mask provided.")
-            self.skiplayer = ConceptSkipLayer(fin, fout, dff_mask)  # <- replaces DynamicSkipLayer
-        else:
-            self.skiplayer = None
+        self.skiplayer = DynamicSkipLayer(content_nc, fout) if useskip else None
 
     def forward(self, x, content=None, state=None):
         mask = None
@@ -114,22 +92,18 @@ class GeneratorLayer(BaseNetwork):
         rgb = self.rgblayer(F.leaky_relu(x, 2e-1))
         if self.skiplayer is not None and content is not None and state is not None:
             x, new_state, mask = self.skiplayer(x, content, state)
-            new_state = state
         return x, rgb, new_state, mask
 
 class Generator(BaseNetwork):
-    def __init__(self, content_nc=[1,1,512,256,128,64], ngf=64, dff_masks=None):
+    def __init__(self, content_nc=[1,1,512,256,128,64], ngf=64):
         super().__init__()
-
-        if dff_masks is None:
-            raise ValueError("Generator requires precomputed dff_masks")
 
         sequence = []
         sequence.append(GeneratorLayer(1, 8*ngf, content_nc[0], usepost=True))
-        sequence.append(GeneratorLayer(8*ngf, 8*ngf, content_nc[1], useskip=True, dff_mask=dff_masks[3]))
-        sequence.append(GeneratorLayer(8*ngf, 4*ngf, content_nc[2], useskip=True, dff_mask=dff_masks[2]))
-        sequence.append(GeneratorLayer(4*ngf, 2*ngf, content_nc[3], useskip=True, dff_mask=dff_masks[1]))
-        sequence.append(GeneratorLayer(2*ngf, 1*ngf, content_nc[4], useskip=True, dff_mask=dff_masks[0]))
+        sequence.append(GeneratorLayer(8*ngf, 8*ngf, content_nc[1], useskip=True))
+        sequence.append(GeneratorLayer(8*ngf, 4*ngf, content_nc[2], useskip=True))
+        sequence.append(GeneratorLayer(4*ngf, 2*ngf, content_nc[3]))
+        sequence.append(GeneratorLayer(2*ngf, 1*ngf, content_nc[4]))
         sequence.append(GeneratorLayer(1*ngf, 1*ngf, content_nc[5]))
 
         self.model = nn.Sequential(*sequence)
