@@ -226,7 +226,9 @@ if __name__ == "__main__":
     while len(dff_masks) < 6:
         dff_masks.append(None)
         
-    dff_masks = [torch.tensor(m).to(device) for m in dff_masks]
+    dff_masks = [
+    torch.tensor(m, dtype=torch.float32).to(device) if m is not None else None
+    for m in dff_masks]
     print("DFF masks ready.")
         
     netG = Generator(dff_masks=dff_masks, alpha=0.6).to(device)
