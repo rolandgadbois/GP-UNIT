@@ -222,7 +222,10 @@ if __name__ == "__main__":
         C = W.shape[0]
         mask = build_channel_mask(W, keep_concepts[i], C=C)
         dff_masks.append(mask)  # mask is np.array of shape [C]
-    
+
+    while len(dff_masks) < 6:
+        dff_masks.append(None)
+        
     dff_masks = [torch.tensor(m).to(device) for m in dff_masks]
     print("DFF masks ready.")
         
