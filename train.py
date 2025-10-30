@@ -226,8 +226,8 @@ if __name__ == "__main__":
     dff_masks = [torch.tensor(m).to(device) for m in dff_masks]
     print("DFF masks ready.")
         
-    netG = Generator().to(device)
-    netG_ema = Generator().to(device)
+    netG = Generator(dff_masks=dff_masks, alpha=0.6).to(device)
+    netG_ema = Generator(dff_masks=dff_masks, alpha=0.6).to(device)
     netD = Discriminator().to(device)
 
     netG.init_weights('kaiming', 0.02)
