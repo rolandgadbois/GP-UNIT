@@ -104,7 +104,12 @@ class GeneratorLayer(BaseNetwork):
         self.reslayer = ResnetBlock(fin, fout)
         self.postlayer = ResnetBlock(fout, fout) if usepost else None
         self.rgblayer = nn.Conv2d(fout, 3, 7, padding=3)
-        self.skiplayer = DynamicSkipLayer(content_nc, fout) if useskip else None
+        if useskip:
+            if dff_mask is None:
+                raise ValueError("useskip=True but no dff_mask provided.")
+            self.skiplayer = ConceptSkipLayer(dff_mask)  # <- replaces DynamicSkipLayer
+        else:
+            self.skiplayer = None
 
     def forward(self, x, content=None, state=None):
         mask = None
@@ -114,7 +119,8 @@ class GeneratorLayer(BaseNetwork):
             x = self.postlayer(x)
         rgb = self.rgblayer(F.leaky_relu(x, 2e-1))
         if self.skiplayer is not None and content is not None and state is not None:
-            x, new_state, mask = self.skiplayer(x, content, state)
+            x = self.skiplayer(x, state)  # <- only returns fused feature
+            new_state = state
         return x, rgb, new_state, mask
 
 class Generator(BaseNetwork):
@@ -123,10 +129,10 @@ class Generator(BaseNetwork):
 
         sequence = []
         sequence.append(GeneratorLayer(1, 8*ngf, content_nc[0], usepost=True))
-        sequence.append(GeneratorLayer(8*ngf, 8*ngf, content_nc[1], useskip=True))
-        sequence.append(GeneratorLayer(8*ngf, 4*ngf, content_nc[2], useskip=True))
-        sequence.append(GeneratorLayer(4*ngf, 2*ngf, content_nc[3]))
-        sequence.append(GeneratorLayer(2*ngf, 1*ngf, content_nc[4]))
+        sequence.append(GeneratorLayer(8*ngf, 8*ngf, content_nc[1], useskip=True, dff_mask=dff_masks[3]))
+        sequence.append(GeneratorLayer(8*ngf, 4*ngf, content_nc[2], useskip=True, dff_mask=dff_masks[2]))
+        sequence.append(GeneratorLayer(4*ngf, 2*ngf, content_nc[3], useskip=True, dff_mask=dff_masks[1]))
+        sequence.append(GeneratorLayer(2*ngf, 1*ngf, content_nc[4], useskip=True, dff_mask=dff_masks[0]))
         sequence.append(GeneratorLayer(1*ngf, 1*ngf, content_nc[5]))
 
         self.model = nn.Sequential(*sequence)
