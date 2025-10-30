@@ -10,13 +10,14 @@ class ConceptSkipLayer(nn.Module):
     """
     Concept-driven skip connection layer that fuses encoder and decoder
     features using precomputed semantic concept masks (from DFF decomposition).
-    Replaces the DynamicSkipLayer used in GP-UNIT.
+    Gracefully handles cases where no concept mask is provided.
     """
 
-    def __init__(self, fin_enc, fin_dec, concept_mask, alpha=0.5, use_norm=True):
+    def __init__(self, fin_enc, fin_dec, concept_mask=None, alpha=0.5, use_norm=True):
         super().__init__()
         self.alpha = alpha
         self.use_norm = use_norm
+        self.has_mask = concept_mask is not None
 
         # Align encoder and decoder channel dimensions
         if fin_enc != fin_dec:
@@ -28,8 +29,11 @@ class ConceptSkipLayer(nn.Module):
             self.norm_enc = nn.InstanceNorm2d(fin_enc, affine=False)
             self.norm_dec = nn.InstanceNorm2d(fin_dec, affine=False)
 
-        # Register concept mask as a non-trainable buffer
-        self.register_buffer("concept_mask", concept_mask.view(1, -1, 1, 1))
+        # Only register the mask if it exists
+        if self.has_mask:
+            self.register_buffer("concept_mask", concept_mask.view(1, -1, 1, 1))
+        else:
+            self.concept_mask = None  # ensures attribute exists
 
     def forward(self, fdec, fenc):
         fenc = self.align(fenc)
@@ -38,8 +42,14 @@ class ConceptSkipLayer(nn.Module):
             fenc = self.norm_enc(fenc)
             fdec = self.norm_dec(fdec)
 
-        f_out = (1 - self.alpha * self.concept_mask) * fdec + \
-                (self.alpha * self.concept_mask) * fenc
+        if self.has_mask:
+            # Concept-guided interpolation
+            f_out = (1 - self.alpha * self.concept_mask) * fdec + \
+                    (self.alpha * self.concept_mask) * fenc
+        else:
+            # Standard skip connection (no DFF guidance)
+            f_out = 0.5 * (fdec + fenc)
+
         return f_out
     
 class ResnetBlock(BaseNetwork):
